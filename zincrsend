@@ -4,7 +4,7 @@
 # Original: https://github.com/bahamas10/zincrsend
 #
 # Exit codes:
-#   0: success.
+#   0: success / script already running.
 #   1: local snapshot creation failed.
 #   2: latest remote snapshot does not exist locally (manual intervention
 #      required).
@@ -14,7 +14,7 @@
 # Configuration options
 ################################################################################
 # Recursive datasets to send. (-R) will remove snapshots that have been deleted
-# locally on the remote end as well. Dataset do *NOT* need to have children. 
+# locally on the remote end as well. Datasets do *NOT* need to have children. 
 datasets=(
   tank/example_dataset
 )
@@ -30,15 +30,19 @@ remote_ssh_opts=(-i /etc/zfs_snapshot/.ssh/id_rsa)
 # prefix to use for snapshots created by this script
 snapshot_prefix=''
 # Number of snapshots to retain after successful sync. 0 disables.
-# If running as a non-root user, be sure to add user with mount,destroy privileges
-# on the dataset. This will allow snapshot management.
+# If running as a non-root user, be sure to add user with mount,destroy
+# privileges on the dataset. This will allow snapshot management.
 #
 #  /usr/sbin/zfs allow -d {ZFS USER} mount,destroy tank/example_dataset
 #
 snapshot_retention=1
-# snapshot options: https://openzfs.github.io/openzfs-docs/man/8/zfs-snapshot.8.html
+# Snapshot options.
+# Reference:
+# * https://openzfs.github.io/openzfs-docs/man/8/zfs-snapshot.8.html
 snapshot_opts=(-r)
-# send options: https://openzfs.github.io/openzfs-docs/man/8/zfs-send.8.html
+# Send options.
+# Reference:
+# * https://openzfs.github.io/openzfs-docs/man/8/zfs-send.8.html
 send_opts=(-R -w)
 ################################################################################
 
@@ -110,7 +114,7 @@ process() {
   # Step 4: After successful sync, trim to he last X snapshots (sync'ed on next run).
   #         the backup pool will always have X+1 snapshots.
   if [[ ${snapshot_retention} -gt 0 ]]; then
-    echo "retainng the last ${snapshot_retention} snapshots for ${ds}"
+    echo "retaining the last ${snapshot_retention} snapshots for ${ds}"
     # Identify the latest X snapshots for a given dataset (creation, newest to oldest)
     zfs_latest=`/usr/sbin/zfs list -H -t snapshot -o name -S creation | grep ^${ds}@ | head -${snapshot_retention}`
     # Identify ALL snapshots for a given dataset (creation, newest to oldest)
@@ -133,6 +137,17 @@ process() {
   fi
 }
 
+one_instance() {
+  script_name=`basename $0`
+  for pid in $(pgrep -f ${script_name}); do
+    if [ $pid != $$ ]; then
+      echo "${script_name} already running."
+      exit 0
+    fi
+  done
+}
+
+one_instance
 echo "starting on $(date)"
 
 code=0

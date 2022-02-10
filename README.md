@@ -5,118 +5,110 @@ Incremental ZFS send/recv backup script
 
 Configuration
 -------------
-
-As of right now this script does not take any arguments or environmental variables,
-all configuration must be done in the script itself.
-
-Note: this script *should* take arguments or a config file - I was just lazy
-
-At the top of the script you'll see a `config` section... modify it
-to fit your environment
+Modify configuration options to fit your environment.
 
 ``` bash
-#########
-# config
-#########
-
-# datasets to send
+################################################################################
+# Configuration options
+################################################################################
+# Recursive datasets to send. (-R) will remove snapshots that have been deleted
+# locally on the remote end as well. Datasets do *NOT* need to have children. 
 datasets=(
-)
-# datasets to send recursively
-# even if a dataset does not have any descendant datasets, using a
-# recursive zfs send (-R) is preferable because it will result
-# in locally removed snapshots being removed on the remote end as well
-datasets_recursive=(
-	goliath/public
-	goliath/minecraft
-	goliath/backups
+  tank/example_dataset
 )
 
-# information about the server on the receiving end
-remote_server='my-backup-server.example.com'
-remote_user='dave'
+# Remote server connection settings.
+remote_server='192.168.0.10'
+remote_user='zfs_snapshot'
 remote_port='22'
-remote_dataset='paper' # zpool name most likely
-remote_command_prefix='sudo' # leave blank for nothing
-remote_ssh_opts=(-i /root/backup/backup.key) # additional opts to give to ssh
+remote_pool='backup'
+remote_command_prefix='sudo'
+remote_ssh_opts=(-i /etc/zfs_snapshot/.ssh/id_rsa)
 
 # prefix to use for snapshots created by this script
-snapshot_prefix='zincrsend_'
-
-# higher = more output
-verbosity_level=0
-
-# function to execute at the end - can be anything
-# $1 - exit code - the code that will be used when this script exits
-# returns - nothing
-end() {
-	local exitcode=$1
-	local msg=
-	case "$exitcode" in
-		0) msg='ok';;
-		*) msg='failed';;
-	esac
-	/opt/custom/bin/pushover zincrsend "$msg - took $((SECONDS / 60)) minutes"
-}
-
-#############
-# end config
-#############
+snapshot_prefix=''
+# Number of snapshots to retain after successful sync. 0 disables.
+# If running as a non-root user, be sure to add user with mount,destroy
+# privileges on the dataset. This will allow snapshot management.
+#
+#  /usr/sbin/zfs allow -d {ZFS USER} mount,destroy tank/example_dataset
+#
+snapshot_retention=1
+# Snapshot options.
+# Reference:
+# * https://openzfs.github.io/openzfs-docs/man/8/zfs-snapshot.8.html
+snapshot_opts=(-r)
+# Send options.
+# Reference:
+# * https://openzfs.github.io/openzfs-docs/man/8/zfs-send.8.html
+send_opts=(-R -w)
+################################################################################
 ```
 
 Example
 -------
 
 ```
-# ./zincrsend
-starting on Fri Dec  4 11:16:00 UTC 2015
+$ ./zincrsend
+$ starting on Wed 09 Feb 2022 05:11:42 PM PST
 
-processing dataset: goliath/public
+processing dataset: hundo/home
 
-creating snapshot locally: goliath/public@zincrsend_1449227760
-latest remote snapshot: paper/public@zincrsend_1449173284
-zfs sending (incremental) @zincrsend_1449173284 -> goliath/public@zincrsend_1449227760 to paper/public
-receiving incremental stream of goliath/public@zincrsend_1449227760 into paper/public@zincrsend_1449227760
-received 312B stream in 1 seconds (312B/sec)
+creating snapshot locally: hundo/home@1644455502
+fetching latest remote snapshot for dataset: tens/home
+latest remote snapshot: tens/home@1644443955
+zfs sending (incremental) @1644443955 -> hundo/home@1644455502 to tens/home
+ssh -i /etc/zfs_snapshot/.ssh/id_rsa 192.168.0.10 sudo /usr/sbin/zfs recv -Fuv tens/home
+zfs_snapshot@pm1:~$ attempting destroy tens/home@1644441006
+success
+receiving incremental stream of hundo/home@1644455502 into tens/home@1644455502
+received 7.73M stream in 1 seconds (7.73M/sec)
+retainng the last 1 snapshots for hundo/home
+all snapshots:       hundo/home@1644455502 hundo/home@1644443955
+retained snapshots:  hundo/home@1644455502
+snapshots to remove: hundo/home@1644443955
 
-processing dataset: goliath/minecraft
+processing dataset: hundo/documents
 
-creating snapshot locally: goliath/minecraft@zincrsend_1449227763
-latest remote snapshot: paper/minecraft@zincrsend_1449173286
-zfs sending (incremental) @zincrsend_1449173286 -> goliath/minecraft@zincrsend_1449227763 to paper/minecraft
-receiving incremental stream of goliath/minecraft@zincrsend_1449227763 into paper/minecraft@zincrsend_1449227763
-received 312B stream in 1 seconds (312B/sec)
+creating snapshot locally: hundo/documents@1644455511
+fetching latest remote snapshot for dataset: tens/documents
+latest remote snapshot: tens/documents@1644443961
+zfs sending (incremental) @1644443961 -> hundo/documents@1644455511 to tens/documents
+ssh -i /etc/zfs_snapshot/.ssh/id_rsa 192.168.0.10 sudo /usr/sbin/zfs recv -Fuv tens/documents
+attempting destroy tens/documents@1644156935
+success
+attempting destroy tens/documents@1644184672
+success
+attempting destroy tens/documents@1644441015
+success
+receiving incremental stream of hundo/documents@1644455511 into tens/documents@1644455511
+received 15.7K stream in 1 seconds (15.7K/sec)
+retainng the last 1 snapshots for hundo/documents
+all snapshots:       hundo/documents@1644455511 hundo/documents@1644443961
+retained snapshots:  hundo/documents@1644455511
+snapshots to remove: hundo/documents@1644443961
 
-processing dataset: goliath/backups
+processing dataset: hundo/music
 
-creating snapshot locally: goliath/backups@zincrsend_1449227766
-latest remote snapshot: paper/backups@zincrsend_1449173288
-zfs sending (incremental) @zincrsend_1449173288 -> goliath/backups@zincrsend_1449227766 to paper/backups
-receiving incremental stream of goliath/backups@zincrsend_1449227766 into paper/backups@zincrsend_1449227766
-received 312B stream in 1 seconds (312B/sec)
-receiving incremental stream of goliath/backups/dave@zincrsend_1449227766 into paper/backups/dave@zincrsend_1449227766
-received 217MB stream in 367 seconds (607KB/sec)
-receiving incremental stream of goliath/backups/skye@zincrsend_1449227766 into paper/backups/skye@zincrsend_1449227766
-received 312B stream in 1 seconds (312B/sec)
-receiving incremental stream of goliath/backups/dad@zincrsend_1449227766 into paper/backups/dad@zincrsend_1449227766
-received 312B stream in 1 seconds (312B/sec)
-receiving incremental stream of goliath/backups/web@zincrsend_1449227766 into paper/backups/web@zincrsend_1449227766
-received 3.16MB stream in 5 seconds (647KB/sec)
+creating snapshot locally: hundo/music@1644470197
+fetching latest remote snapshot for dataset: tens/music
+latest remote snapshot: tens/music@1644443978
+zfs sending (incremental) @1644443978 -> hundo/music@1644470197 to tens/music
+ssh -i /etc/zfs_snapshot/.ssh/id_rsa 192.168.0.10 sudo /usr/sbin/zfs recv -Fuv tens/music
+attempting destroy tens/music@1644441036
+success
+receiving incremental stream of hundo/music@1644470197 into tens/music@1644470197
+received 114G stream in 8837 seconds (13.2M/sec)
+retainng the last 1 snapshots for hundo/music
+all snapshots:       hundo/music@1644470197 hundo/music@1644443978
+retained snapshots:  hundo/music@1644470197
+snapshots to remove: hundo/music@1644443978
 
-script ran for ~6 minutes (384 seconds)
-
-pushover sent!
-
----------------------------------
+script ran for ~147 minutes (8839 seconds)
 ```
-
-Notes
------
-
-Consider using [ZFS Prune Snapshots](https://github.com/bahamas10/zfs-prune-snapshots) to remove
-old `zincrsend` snapshots
 
 License
 -------
 
 MIT License
+
